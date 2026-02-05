@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FATmax Pro v6.3 (Residual Filter)</title>
+    <title>FATmax Pro v6.4 (Stable UI)</title>
     
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
@@ -58,8 +58,8 @@
 <body>
 
     <div class="card">
-        <h1>🔥 FATmax Pro v6.3</h1>
-        <p class="subtitle">Poly-Residual Filter + Automated Quality Checks</p>
+        <h1>🔥 FATmax Pro v6.4</h1>
+        <p class="subtitle">Poly-Residual Filter + Stable Codebase</p>
 
         <div id="loader" class="loading">
             ⏳ <b>Loading Scientific Environment...</b><br>
@@ -74,7 +74,7 @@
                     <input type="text" id="sa" value="4, 5, 6, 7, 8, 9, 10">
                     <label>Fat Oxidation (g/min)</label>
                     <input type="text" id="fa" value="0.25, 0.35, 1.85, 0.65, 0.50, 0.20, 0.05">
-                    <small style="color:#888;">(Example with outlier included)</small>
+                    <small style="color:#888;">(Includes outlier example: 1.85)</small>
                 </div>
                 <div>
                     <div class="col-title bg-b">Subject B (Comparison)</div>
@@ -88,7 +88,7 @@
             <div style="margin-top:15px; font-size:0.85em; background:#e2e3e5; padding:10px; border-radius:5px;">
                 <label style="display:inline; margin:0;">
                     <input type="checkbox" id="chk_filter" checked style="width:auto; margin-right:5px;"> 
-                    <b>Shape-Aware Filter:</b> Remove points deviating from polynomial trend (Residual Z > 1.96).
+                    <b>Shape-Aware Filter:</b> Remove points deviating from polynomial trend (Residual Z > 2.0).
                 </label>
             </div>
 
@@ -149,43 +149,38 @@
             y[y < 0] = 0
             return y
 
-        # 3. POLY-RESIDUAL FILTER (New logic v6.3)
+        # 3. POLY-RESIDUAL FILTER (Robust Logic)
         def apply_filter(x, y):
             if len(y) < 4: return x, y, [], []
             
-            # A. Fit a robust 3rd degree polynomial to capture general shape
             try:
-                # Weights: giving slightly less weight to extreme y values initially
+                # A. Fit robust polynomial (degree 3)
                 coeffs = np.polyfit(x, y, 3) 
                 poly_curve = np.poly1d(coeffs)
                 y_pred = poly_curve(x)
                 
-                # B. Calculate Residuals
+                # B. Residuals
                 residuals = np.abs(y - y_pred)
                 
-                # C. Calculate Robust Z-Score of residuals
-                # Use Median Absolute Deviation (MAD) for robustness
+                # C. Robust Z-Score (using Median Absolute Deviation)
                 median_res = np.median(residuals)
                 mad_res = np.median(np.abs(residuals - median_res))
                 
-                if mad_res == 0: mad_res = 1e-9 # Prevent div/0
+                if mad_res == 0: mad_res = 1e-9 
                 
-                # Standard consistency constant for MAD -> Sigma
                 sigma_est = 1.4826 * mad_res
-                
                 z_scores = (residuals - median_res) / sigma_est
                 
-                # D. Threshold: Z > 2.5 (Strict but fair for small N)
+                # D. Threshold: Z > 2.5 (High tolerance for variability)
                 mask_out = z_scores > 2.5
                 
-                # Safety: Don't filter if it removes > 50% of data
+                # Safety check
                 if np.sum(mask_out) > (len(y) / 2):
                     return x, y, [], []
                 
                 return x[~mask_out], y[~mask_out], x[mask_out], y[mask_out]
 
             except:
-                # Fallback if polyfit fails
                 return x, y, [], []
 
         # 4. Metrics
@@ -212,26 +207,23 @@
                     x_out, y_out = [], []
 
                 if len(x_fit) < 4: 
-                    return {"error": "Not enough valid data points. Check inputs."}
+                    return {"error": "Insufficient valid data (N<4)."}
 
-                # Initial Guesses
+                # Fit
                 p0_A = np.max(y_fit)
                 rng = np.max(x_fit) - np.min(x_fit)
                 scale = rng if rng > 0 else 1
                 p0_K = np.pi / (scale + 1)
                 p0_t = -p0_K * np.min(x_fit)
-                
-                # Bounds
                 bds = ([0, 0.1, -5.0, -np.inf, 0], [np.inf, 10, 50, np.inf, np.inf])
                 
-                # Fit
                 popt, pcov = curve_fit(model_sin, x_fit, y_fit, p0=[p0_A, 1.0, 0.0, p0_t, p0_K], bounds=bds, maxfev=10000)
                 
-                # Check Bounds/Warnings
-                if popt[1] > 9.9: warnings.append("⚠️ Symmetry parameter saturated. Curve may be non-physiological.")
-                if popt[2] > 49: warnings.append("⚠️ Dilatation parameter saturated.")
+                # Warnings
+                if popt[1] > 9.9: warnings.append("⚠️ Symmetry saturated (Atypical curve).")
+                if popt[2] > 49: warnings.append("⚠️ Dilatation saturated.")
 
-                # Curve Gen
+                # Curve
                 xs = np.linspace(min(x_raw), max(x_raw)+2, 200)
                 ys = model_sin(xs, *popt)
                 idx = np.argmax(ys)
@@ -244,12 +236,12 @@
                 if len(z_idx) > 0: z_lo, z_hi = xs[z_idx[0]], xs[z_idx[-1]]
                 else: z_lo, z_hi = fatmax, fatmax
 
-                # Quality Metrics
+                # Quality
                 y_pred_fit = model_sin(x_fit, *popt)
                 r2, aic = calc_metrics(y_fit, y_pred_fit)
                 
-                if r2 < 0.70: warnings.append(f"⚠️ Poor Fit Quality (R²={r2:.2f}). Data is highly scattered.")
-                if len(x_out) > 0: warnings.append(f"ℹ️ {len(x_out)} outlier(s) automatically removed.")
+                if r2 < 0.70: warnings.append(f"⚠️ Poor Fit (R²={r2:.2f}).")
+                if len(x_out) > 0: warnings.append(f"ℹ️ {len(x_out)} outlier(s) removed.")
 
                 return {
                     "xs": xs, "ys": ys,
@@ -262,9 +254,13 @@
                 }
             except Exception as e: return {"error": str(e)}
 
+        # --- SAFE ROW CREATION HELPER (Fixes the SyntaxError) ---
+        def create_row(label, val_a, val_b):
+            # Esta funcion evita errores de lineas largas
+            return f"<tr><td class='metric'>{label}</td><td class='val-a'>{val_a}</td><td class='val-b'>{val_b}</td></tr>"
+
         # 6. Main Handler
         def run_click(event):
-            # Reset UI
             document.getElementById("err_msg").style.display = "none"
             document.getElementById("warn_container").style.display = "none"
             document.getElementById("warn_a").style.display = "none"
@@ -275,25 +271,22 @@
             try:
                 do_filter = document.getElementById("chk_filter").checked
                 
-                # ANALYZE A
+                # Analyze A
                 str_sa = document.getElementById("sa").value
                 str_fa = document.getElementById("fa").value
                 xa = np.array([float(k) for k in str_sa.split(",")])
                 ya = np.array([float(k) for k in str_fa.split(",")])
                 res_a = analyze(xa, ya, do_filter)
-                
                 if "error" in res_a: raise ValueError(f"Subject A: {res_a['error']}")
                 
-                # Show Warnings A
+                # Warnings A
                 if res_a['warnings']:
                     document.getElementById("warn_container").style.display = "block"
                     document.getElementById("warn_a").style.display = "block"
-                    w_html = "<span class='warning-icon'>⚠️</span><div><b>Subject A Alerts:</b><ul style='margin:5px 0 0 0; padding-left:15px;'>"
-                    for w in res_a['warnings']: w_html += f"<li>{w}</li>"
-                    w_html += "</ul></div>"
-                    document.getElementById("warn_a").innerHTML = w_html
+                    w_list = "".join([f"<li>{w}</li>" for w in res_a['warnings']])
+                    document.getElementById("warn_a").innerHTML = f"<span class='warning-icon'>⚠️</span><div><b>Subject A Alerts:</b><ul style='margin:0;padding-left:15px;'>{w_list}</ul></div>"
 
-                # ANALYZE B
+                # Analyze B
                 str_sb = document.getElementById("sb").value.strip()
                 str_fb = document.getElementById("fb").value.strip()
                 res_b = None
@@ -304,26 +297,22 @@
                     res_b = analyze(xb, yb, do_filter)
                     if "error" in res_b: raise ValueError(f"Subject B: {res_b['error']}")
                     
-                    # Show Warnings B
                     if res_b['warnings']:
                         document.getElementById("warn_container").style.display = "block"
                         document.getElementById("warn_b").style.display = "block"
-                        w_html = "<span class='warning-icon'>⚠️</span><div><b>Subject B Alerts:</b><ul style='margin:5px 0 0 0; padding-left:15px;'>"
-                        for w in res_b['warnings']: w_html += f"<li>{w}</li>"
-                        w_html += "</ul></div>"
-                        document.getElementById("warn_b").innerHTML = w_html
+                        w_list = "".join([f"<li>{w}</li>" for w in res_b['warnings']])
+                        document.getElementById("warn_b").innerHTML = f"<span class='warning-icon'>⚠️</span><div><b>Subject B Alerts:</b><ul style='margin:0;padding-left:15px;'>{w_list}</ul></div>"
 
-                # PLOT
+                # Plot
                 fig, ax = plt.subplots(figsize=(7, 5))
-                # Plot A
-                ax.scatter(res_a['x_fit'], res_a['y_fit'], color='#d63384', alpha=0.7, label='A (Valid Data)')
+                # A
+                ax.scatter(res_a['x_fit'], res_a['y_fit'], color='#d63384', alpha=0.7, label='A (Valid)')
                 if res_a['n_out'] > 0: ax.scatter(res_a['x_out'], res_a['y_out'], color='red', marker='x', s=100, linewidth=2, label='A (Outlier)', zorder=10)
                 ax.plot(res_a['xs'], res_a['ys'], color='#d63384', linewidth=2.5, label='A (Model)')
                 ax.fill_between(res_a['xs'], 0, res_a['ys'], where=(res_a['xs']>=res_a['zlo'])&(res_a['xs']<=res_a['zhi']), color='#d63384', alpha=0.1)
-                
-                # Plot B
+                # B
                 if res_b:
-                    ax.scatter(res_b['x_fit'], res_b['y_fit'], color='#0d6efd', alpha=0.7, label='B (Valid Data)')
+                    ax.scatter(res_b['x_fit'], res_b['y_fit'], color='#0d6efd', alpha=0.7, label='B (Valid)')
                     if res_b['n_out'] > 0: ax.scatter(res_b['x_out'], res_b['y_out'], color='red', marker='x', s=100, linewidth=2, label='B (Outlier)', zorder=10)
                     ax.plot(res_b['xs'], res_b['ys'], color='#0d6efd', linewidth=2.5, label='B (Model)')
                     ax.fill_between(res_b['xs'], 0, res_b['ys'], where=(res_b['xs']>=res_b['zlo'])&(res_b['xs']<=res_b['zhi']), color='#0d6efd', alpha=0.1)
@@ -335,11 +324,37 @@
                 ax.grid(True, alpha=0.25)
                 display(fig, target="plot_out", append=False)
 
-                # TABLE
+                # Table Construction (Using Safe Helper)
                 def safe_get(res, key, fmt="{:.2f}"):
                     if not res: return "-"
                     return fmt.format(res[key])
 
                 rows = ""
-                rows += f"<tr><td class
+                rows += create_row("MFO (Peak)", f"{res_a['mfo']:.2f} g/min", safe_get(res_b, 'mfo'))
+                rows += create_row("FATmax", f"{res_a['fm']:.2f}", safe_get(res_b, 'fm'))
+                rows += create_row("Target Zone", f"{res_a['zlo']:.1f}-{res_a['zhi']:.1f}", f"{safe_get(res_b, 'zlo', '{:.1f}')}-{safe_get(res_b, 'zhi', '{:.1f}')}")
+                rows += create_row("FATmin", f"{res_a['fmin']:.2f}", safe_get(res_b, 'fmin'))
+                rows += create_row("Symmetry", f"{res_a['sym']:.2f}", safe_get(res_b, 'sym'))
+                rows += create_row("Dilatation", f"{res_a['dil']:.2f}", safe_get(res_b, 'dil'))
+                
+                rows += "<tr><td colspan='3' class='sub-header'>Model Quality</td></tr>"
+                rows += create_row("R² (Fit)", f"{res_a['r2']:.3f}", safe_get(res_b, 'r2', '{:.3f}'))
+                rows += create_row("AIC", f"{res_a['aic']:.1f}", safe_get(res_b, 'aic', '{:.1f}'))
+                rows += create_row("Outliers", f"{res_a['n_out']}", safe_get(res_b, 'n_out', '{:.0f}'))
+
+                head = "<table><thead><tr><th>Variable</th><th style='color:#d63384'>Subject A</th><th style='color:#0d6efd'>Subject B</th></tr></thead>"
+                body = "<tbody>" + rows + "</tbody></table>"
+                
+                document.getElementById("results").style.display = "block"
+                document.getElementById("table_out").innerHTML = head + body
+
+            except Exception as e:
+                document.getElementById("err_msg").style.display = "block"
+                document.getElementById("err_msg").innerText = f"Error: {e}"
+
+        proxy = create_proxy(run_click)
+        document.getElementById("btn_calc").addEventListener("click", proxy)
+    </script>
+</body>
+</html>
 
