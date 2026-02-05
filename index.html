@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FATmax Pro v6.5 (Stable)</title>
+    <title>FATmax Pro v6.6 (Clean UI)</title>
     
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
@@ -58,8 +58,8 @@
 <body>
 
     <div class="card">
-        <h1>🔥 FATmax Pro v6.5</h1>
-        <p class="subtitle">Stable Version | Poly-Residual Filter</p>
+        <h1>🔥 FATmax Pro v6.6</h1>
+        <p class="subtitle">Clean UI | Poly-Residual Filter | Auto-Mute Warnings</p>
 
         <div id="loader" class="loading">
             ⏳ <b>Loading Scientific Environment...</b><br>
@@ -116,7 +116,8 @@
         import numpy as np
         import pandas as pd
         import matplotlib.pyplot as plt
-        from scipy.optimize import curve_fit
+        from scipy.optimize import curve_fit, OptimizeWarning
+        import warnings
         from js import document
         from pyodide.ffi import create_proxy
         from pyscript import display
@@ -154,15 +155,13 @@
             if len(y) < 4: return x, y, [], []
             
             try:
-                # A. Fit a parabolic curve (degree 2) to force physiological shape
+                # Fit Parabola (Degree 2)
                 coeffs = np.polyfit(x, y, 2) 
                 poly_curve = np.poly1d(coeffs)
                 y_pred = poly_curve(x)
                 
-                # B. Residuals
+                # Residuals & Z-Score
                 residuals = np.abs(y - y_pred)
-                
-                # C. Robust Z-Score (using Median Absolute Deviation)
                 median_res = np.median(residuals)
                 mad_res = np.median(np.abs(residuals - median_res))
                 
@@ -171,10 +170,8 @@
                 sigma_est = 1.4826 * mad_res
                 z_scores = (residuals - median_res) / sigma_est
                 
-                # D. Threshold: Z > 2.0
                 mask_out = z_scores > 2.0
                 
-                # Safety: Don't filter if it removes > 50% of data
                 if np.sum(mask_out) > (len(y) / 2):
                     return x, y, [], []
                 
@@ -198,7 +195,7 @@
 
         # 5. Analysis Engine
         def analyze(x_raw, y_raw, use_filter=True):
-            warnings = []
+            warnings_list = []
             try:
                 if use_filter:
                     x_fit, y_fit, x_out, y_out = apply_filter(x_raw, y_raw)
@@ -217,13 +214,17 @@
                 p0_t = -p0_K * np.min(x_fit)
                 bds = ([0, 0.1, -5.0, -np.inf, 0], [np.inf, 10, 50, np.inf, np.inf])
                 
-                popt, pcov = curve_fit(model_sin, x_fit, y_fit, p0=[p0_A, 1.0, 0.0, p0_t, p0_K], bounds=bds, maxfev=10000)
-                
-                # Warnings
-                if popt[1] > 9.9: warnings.append("⚠️ Symmetry saturated (Atypical curve).")
-                if popt[2] > 49: warnings.append("⚠️ Dilatation saturated.")
+                # --- SILENCE THE WARNING HERE ---
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", OptimizeWarning)
+                    popt, pcov = curve_fit(model_sin, x_fit, y_fit, p0=[p0_A, 1.0, 0.0, p0_t, p0_K], bounds=bds, maxfev=10000)
+                # --------------------------------
 
-                # Curve
+                # Logical Warnings
+                if popt[1] > 9.9: warnings_list.append("⚠️ Symmetry saturated (Atypical curve).")
+                if popt[2] > 49: warnings_list.append("⚠️ Dilatation saturated.")
+
+                # Curve Gen
                 xs = np.linspace(min(x_raw), max(x_raw)+2, 200)
                 ys = model_sin(xs, *popt)
                 idx = np.argmax(ys)
@@ -240,8 +241,8 @@
                 y_pred_fit = model_sin(x_fit, *popt)
                 r2, aic = calc_metrics(y_fit, y_pred_fit)
                 
-                if r2 < 0.70: warnings.append(f"⚠️ Poor Fit (R²={r2:.2f}).")
-                if len(x_out) > 0: warnings.append(f"ℹ️ {len(x_out)} outlier(s) removed.")
+                if r2 < 0.70: warnings_list.append(f"⚠️ Poor Fit (R²={r2:.2f}).")
+                if len(x_out) > 0: warnings_list.append(f"ℹ️ {len(x_out)} outlier(s) removed.")
 
                 return {
                     "xs": xs, "ys": ys,
@@ -250,11 +251,11 @@
                     "zlo": z_lo, "zhi": z_hi,
                     "sym": popt[1], "dil": popt[2],
                     "r2": r2, "aic": aic, "n_out": len(x_out),
-                    "warnings": warnings
+                    "warnings": warnings_list
                 }
             except Exception as e: return {"error": str(e)}
 
-        # --- HELPERS (Prevents Syntax Error) ---
+        # --- HELPERS ---
         def create_row(label, val_a, val_b):
             return f"<tr><td class='metric'>{label}</td><td class='val-a'>{val_a}</td><td class='val-b'>{val_b}</td></tr>"
 
@@ -327,7 +328,7 @@
                 ax.grid(True, alpha=0.25)
                 display(fig, target="plot_out", append=False)
 
-                # Table Construction (Using Safe Helper)
+                # Table
                 rows = ""
                 rows += create_row("MFO (Peak)", f"{res_a['mfo']:.2f} g/min", safe_get(res_b, 'mfo'))
                 rows += create_row("FATmax", f"{res_a['fm']:.2f}", safe_get(res_b, 'fm'))
