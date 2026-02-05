@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FATmax Pro v6.4 (Stable UI)</title>
+    <title>FATmax Pro v6.5 (Stable)</title>
     
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
@@ -58,8 +58,8 @@
 <body>
 
     <div class="card">
-        <h1>🔥 FATmax Pro v6.4</h1>
-        <p class="subtitle">Poly-Residual Filter + Stable Codebase</p>
+        <h1>🔥 FATmax Pro v6.5</h1>
+        <p class="subtitle">Stable Version | Poly-Residual Filter</p>
 
         <div id="loader" class="loading">
             ⏳ <b>Loading Scientific Environment...</b><br>
@@ -88,7 +88,7 @@
             <div style="margin-top:15px; font-size:0.85em; background:#e2e3e5; padding:10px; border-radius:5px;">
                 <label style="display:inline; margin:0;">
                     <input type="checkbox" id="chk_filter" checked style="width:auto; margin-right:5px;"> 
-                    <b>Shape-Aware Filter:</b> Remove points deviating from polynomial trend (Residual Z > 2.0).
+                    <b>Shape-Aware Filter:</b> Remove points deviating from parabolic trend (Residual Z > 2.0).
                 </label>
             </div>
 
@@ -149,13 +149,13 @@
             y[y < 0] = 0
             return y
 
-        # 3. POLY-RESIDUAL FILTER (Robust Logic)
+        # 3. ROBUST FILTER (Parabolic Residuals)
         def apply_filter(x, y):
             if len(y) < 4: return x, y, [], []
             
             try:
-                # A. Fit robust polynomial (degree 3)
-                coeffs = np.polyfit(x, y, 3) 
+                # A. Fit a parabolic curve (degree 2) to force physiological shape
+                coeffs = np.polyfit(x, y, 2) 
                 poly_curve = np.poly1d(coeffs)
                 y_pred = poly_curve(x)
                 
@@ -171,10 +171,10 @@
                 sigma_est = 1.4826 * mad_res
                 z_scores = (residuals - median_res) / sigma_est
                 
-                # D. Threshold: Z > 2.5 (High tolerance for variability)
-                mask_out = z_scores > 2.5
+                # D. Threshold: Z > 2.0
+                mask_out = z_scores > 2.0
                 
-                # Safety check
+                # Safety: Don't filter if it removes > 50% of data
                 if np.sum(mask_out) > (len(y) / 2):
                     return x, y, [], []
                 
@@ -254,10 +254,13 @@
                 }
             except Exception as e: return {"error": str(e)}
 
-        # --- SAFE ROW CREATION HELPER (Fixes the SyntaxError) ---
+        # --- HELPERS (Prevents Syntax Error) ---
         def create_row(label, val_a, val_b):
-            # Esta funcion evita errores de lineas largas
             return f"<tr><td class='metric'>{label}</td><td class='val-a'>{val_a}</td><td class='val-b'>{val_b}</td></tr>"
+
+        def safe_get(res, key, fmt="{:.2f}"):
+            if not res: return "-"
+            return fmt.format(res[key])
 
         # 6. Main Handler
         def run_click(event):
@@ -325,10 +328,6 @@
                 display(fig, target="plot_out", append=False)
 
                 # Table Construction (Using Safe Helper)
-                def safe_get(res, key, fmt="{:.2f}"):
-                    if not res: return "-"
-                    return fmt.format(res[key])
-
                 rows = ""
                 rows += create_row("MFO (Peak)", f"{res_a['mfo']:.2f} g/min", safe_get(res_b, 'mfo'))
                 rows += create_row("FATmax", f"{res_a['fm']:.2f}", safe_get(res_b, 'fm'))
@@ -357,4 +356,3 @@
     </script>
 </body>
 </html>
-
