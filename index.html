@@ -3,16 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FATmax Pro v6.6 (Clean UI)</title>
+    <title>FATmax Pro v6.9 (Units & PDF Fixed)</title>
     
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <style>
         body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 950px; margin: 0 auto; padding: 20px; background: #f8f9fa; color: #343a40; }
-        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #e9ecef; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #e9ecef; box-sizing: border-box; }
         h1 { color: #d63384; text-align: center; margin: 0 0 5px 0; }
-        .subtitle { text-align: center; color: #6c757d; font-size: 0.9em; margin-bottom: 25px; }
+        .subtitle { text-align: center; color: #6c757d; font-size: 0.9em; margin-bottom: 20px; }
+        
+        .units-container { text-align: center; margin-bottom: 25px; background: #f1f3f5; padding: 10px; border-radius: 8px; border: 1px solid #dee2e6; }
+        .units-container select { padding: 6px 12px; border-radius: 5px; border: 1px solid #ced4da; font-weight: bold; color: #495057; outline: none; }
         
         .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 700px) { .input-grid { grid-template-columns: 1fr; } }
@@ -22,11 +27,15 @@
         .bg-b { background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%); }
         
         label { display: block; margin-top: 10px; font-size: 0.85em; font-weight: 600; color: #495057; }
-        input { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; font-family: monospace; box-sizing: border-box; transition: 0.2s; }
-        input:focus { border-color: #d63384; outline: none; }
+        input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; font-family: monospace; box-sizing: border-box; transition: 0.2s; }
+        input[type="text"]:focus { border-color: #d63384; outline: none; }
         
         button { background: #212529; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 25px; transition: 0.2s; }
         button:hover { background: #343a40; transform: translateY(-1px); }
+        
+        /* PDF Button Style */
+        .btn-pdf { background: #198754; margin-top: 30px; }
+        .btn-pdf:hover { background: #157347; }
         
         .loading { background: #fff3cd; color: #856404; padding: 15px; border-radius: 6px; text-align: center; margin-bottom: 20px; border: 1px solid #ffeeba; }
         .error { color: #842029; background: #f8d7da; padding: 10px; border-radius: 6px; text-align: center; margin-top: 15px; display: none; border: 1px solid #f5c2c7; }
@@ -46,7 +55,8 @@
         }
         .warning-icon { margin-right: 10px; font-size: 1.2em; }
         
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; background: white; }
+        /* Fixed Table Layout to prevent PDF Trimming */
+        table { width: 100%; table-layout: fixed; word-wrap: break-word; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; background: white; }
         th, td { padding: 12px; text-align: center; border-bottom: 1px solid #dee2e6; }
         th { background: #f1f3f5; color: #495057; text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.5px; }
         .metric { text-align: left; font-weight: 700; color: #212529; }
@@ -57,9 +67,9 @@
 </head>
 <body>
 
-    <div class="card">
-        <h1>🔥 FATmax Pro v6.6</h1>
-        <p class="subtitle">Clean UI | Poly-Residual Filter | Auto-Mute Warnings</p>
+    <div class="card" id="input_card">
+        <h1>🔥 FATmax Pro v6.9</h1>
+        <p class="subtitle">Dynamic Units | Poly-Residual Filter | Auto-Mute Warnings</p>
 
         <div id="loader" class="loading">
             ⏳ <b>Loading Scientific Environment...</b><br>
@@ -67,10 +77,23 @@
         </div>
 
         <div id="ui" style="display:none;">
+            
+            <div class="units-container">
+                <label style="display:inline; margin-right: 10px; font-size: 1em;">Workload Units:</label>
+                <select id="unit_sel">
+                    <option value="km/h">Speed (km/h)</option>
+                    <option value="W">Power (Watts)</option>
+                    <option value="bpm">Heart Rate (bpm)</option>
+                    <option value="%HRmax">% HRmax</option>
+                    <option value="m/s">Speed (m/s)</option>
+                    <option value="">Generic (No Units)</option>
+                </select>
+            </div>
+
             <div class="input-grid">
                 <div>
                     <div class="col-title bg-a">Subject A (Main)</div>
-                    <label>Speed / Power</label>
+                    <label>Intensity (Speed / Power)</label>
                     <input type="text" id="sa" value="4, 5, 6, 7, 8, 9, 10">
                     <label>Fat Oxidation (g/min)</label>
                     <input type="text" id="fa" value="0.25, 0.35, 1.85, 0.65, 0.50, 0.20, 0.05">
@@ -78,7 +101,7 @@
                 </div>
                 <div>
                     <div class="col-title bg-b">Subject B (Comparison)</div>
-                    <label>Speed / Power</label>
+                    <label>Intensity (Speed / Power)</label>
                     <input type="text" id="sb" value="" placeholder="Optional">
                     <label>Fat Oxidation (g/min)</label>
                     <input type="text" id="fb" value="" placeholder="Optional">
@@ -106,7 +129,47 @@
         <h3 style="text-align:center; margin-top:0; color:#495057;">Analysis Report</h3>
         <div id="table_out"></div>
         <div id="plot_out" style="display:flex; justify-content:center; margin-top:25px;"></div>
+        
+        <button id="btn_pdf" class="btn-pdf" onclick="downloadPDF()">📄 DOWNLOAD PDF REPORT</button>
     </div>
+
+    <script>
+        async function downloadPDF() {
+            const element = document.getElementById('results');
+            const btn = document.getElementById('btn_pdf');
+            
+            // Hide the button so it doesn't appear in the PDF
+            btn.style.display = 'none';
+
+            // Set fixed width to ensure stable formatting for A4 Portrait without trimming
+            const originalWidth = element.style.width;
+            const originalMaxWidth = element.style.maxWidth;
+            const originalMargin = element.style.margin;
+            
+            element.style.width = '700px'; 
+            element.style.maxWidth = '700px'; 
+            element.style.margin = '0 auto';
+            
+            // Give the browser a moment to apply styles
+            await new Promise(r => setTimeout(r, 200));
+
+            const opt = {
+                margin:       [10, 10, 10, 10],
+                filename:     'FATmax_Report.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                // Restore original styles and button visibility
+                element.style.width = originalWidth;
+                element.style.maxWidth = originalMaxWidth;
+                element.style.margin = originalMargin;
+                btn.style.display = 'block';
+            });
+        }
+    </script>
 
     <py-config>
         packages = ["numpy", "scipy", "matplotlib", "pandas"]
@@ -275,6 +338,10 @@
             try:
                 do_filter = document.getElementById("chk_filter").checked
                 
+                # Get Selected Units
+                unit_val = document.getElementById("unit_sel").value
+                u_str = f" ({unit_val})" if unit_val else ""
+                
                 # Analyze A
                 str_sa = document.getElementById("sa").value
                 str_fa = document.getElementById("fa").value
@@ -322,7 +389,7 @@
                     ax.fill_between(res_b['xs'], 0, res_b['ys'], where=(res_b['xs']>=res_b['zlo'])&(res_b['xs']<=res_b['zhi']), color='#0d6efd', alpha=0.1)
                 
                 ax.set_title("Metabolic Profile Comparison")
-                ax.set_xlabel("Intensity")
+                ax.set_xlabel(f"Intensity{u_str}")
                 ax.set_ylabel("Oxidation (g/min)")
                 ax.legend()
                 ax.grid(True, alpha=0.25)
@@ -330,10 +397,10 @@
 
                 # Table
                 rows = ""
-                rows += create_row("MFO (Peak)", f"{res_a['mfo']:.2f} g/min", safe_get(res_b, 'mfo'))
-                rows += create_row("FATmax", f"{res_a['fm']:.2f}", safe_get(res_b, 'fm'))
-                rows += create_row("Target Zone", f"{res_a['zlo']:.1f}-{res_a['zhi']:.1f}", f"{safe_get(res_b, 'zlo', '{:.1f}')}-{safe_get(res_b, 'zhi', '{:.1f}')}")
-                rows += create_row("FATmin", f"{res_a['fmin']:.2f}", safe_get(res_b, 'fmin'))
+                rows += create_row("MFO (Peak)", f"{res_a['mfo']:.2f} g/min", safe_get(res_b, 'mfo') + (" g/min" if res_b else ""))
+                rows += create_row(f"FATmax{u_str}", f"{res_a['fm']:.2f}", safe_get(res_b, 'fm'))
+                rows += create_row(f"Target Zone{u_str}", f"{res_a['zlo']:.1f}-{res_a['zhi']:.1f}", f"{safe_get(res_b, 'zlo', '{:.1f}')}-{safe_get(res_b, 'zhi', '{:.1f}')}")
+                rows += create_row(f"FATmin{u_str}", f"{res_a['fmin']:.2f}", safe_get(res_b, 'fmin'))
                 rows += create_row("Symmetry", f"{res_a['sym']:.2f}", safe_get(res_b, 'sym'))
                 rows += create_row("Dilatation", f"{res_a['dil']:.2f}", safe_get(res_b, 'dil'))
                 
